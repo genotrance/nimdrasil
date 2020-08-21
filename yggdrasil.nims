@@ -1,4 +1,4 @@
-import os, strformat, strutils
+import os, regex, strformat, strutils
 
 let
   julia = findExe("julia")
@@ -12,7 +12,7 @@ if not fileExists(julia):
   quit()
 
 if system.paramCount() < 5:
-  echo "nim e yggdrasil path pkgname version1,version2"
+  echo "nim e yggdrasil path pkgname version1,version2 [--skipBuild]"
   quit()
 
 let
@@ -30,7 +30,7 @@ if not system.dirExists(dir):
   quit()
 
 for ver in vers.split(","):
-  echo &"Building {pkg} v{ver}"
+  echo &"Processing {pkg} v{ver}"
 
   withDir(dir):
     let
@@ -67,10 +67,14 @@ for ver in vers.split(","):
         outdata &= line & "\n"
     writeFile(build, outdata)
 
-    # Build artifacts
-    rmDir("products")
-    putEnv("BINARYBUILDER_AUTOMATIC_APPLE", "true")
-    exec &"{julia} --color=yes {build} --deploy=\"fake/fake\""
+    if not commandLineParams().contains("--skipBuild"):
+      # Build artifacts
+      echo "Building ..."
+      rmDir("products")
+      putEnv("BINARYBUILDER_AUTOMATIC_APPLE", "true")
+      exec &"{julia} --color=yes {build} --deploy=\"fake/fake\""
+    else:
+      echo "Skipped build"
 
     # Upload to bintray
     withDir("products"):
@@ -92,7 +96,7 @@ for ver in vers.split(","):
         exec &"jfrog bt vc {verpath}"
 
       # Upload files
-      exec &"jfrog bt u --publish \"*.gz\" {verpath} {pkg}-v{ver}/"
+      exec &"jfrog bt u --publish --override \"*.gz\" {verpath} {pkg}-v{ver}/"
 
       # Upload toml files
       withDir(juliadev / &"{pkg}_jll"):
@@ -101,8 +105,8 @@ for ver in vers.split(","):
           ptoml = "Project.toml"
           data = readFile(atoml)
         writeFile(atoml, data.replace(
-          &"https://github.com/fake/fake/releases/download/{pkg}-v{ver}+0",
+          &"https://github.com/fake/fake/releases/download/{pkg}-v{ver}",
           &"https://bintray.com/{user}/{repo}/download_file?file_path={pkg}-v{ver}"
-        ))
+        ).replace(re"\+\d+", ""))
 
-        exec &"jfrog bt u --publish \"*.toml\" {verpath} {pkg}-v{ver}/"
+        exec &"jfrog bt u --publish --override \"*.toml\" {verpath} {pkg}-v{ver}/"
